@@ -1,0 +1,27 @@
+{
+  "classes": [
+    "Avocado",
+    "Daisy",
+    "Grapes",
+    "Kiwi",
+    "Lavender",
+    "Lily",
+    "Onion",
+    "Orange",
+    "Rose",
+    "Sunflower",
+    "Tomato",
+    "aloevera",
+    "banana",
+    "cucumber",
+    "eggplant",
+    "other",
+    "sweetpotatoes",
+    "watermelon"
+  ],
+  "temperature": 0.9237459897994995,
+  "threshold_conf": 0.75,
+  "threshold_margin": 0.0,
+  "other_class": "other",
+  "img_size": 224
+}
