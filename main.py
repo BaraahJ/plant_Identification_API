@@ -163,10 +163,26 @@ async def predict(files: List[UploadFile] = File(...)):
     # Decision policy (perfect scenarios)
     # ----------------------------
 
-    # PASS items
-    pass_items = [r for r in per_img if is_pass(r)]
+    # ----------------------------
+# Decision policy (anti-unfair)
+# ----------------------------
 
-    # Rule 1: Majority agreement among PASS (2/3 or 2/2)
+    def is_weak(r):
+        # صور ضعيفة: يا اما Other/Unknown-like أو ثقتها قليلة
+        return (r["idx"] == OTHER_IDX) or (r["conf"] < 0.35)
+
+    def is_strong_any(r):
+        # صورة قوية جدا (تقدر تعدل الأرقام)
+        return (r["idx"] != OTHER_IDX) and (r["conf"] >= 0.80) and (r["margin"] >= 0.10)
+
+    def is_pass_any(r):
+        # Pass عادي (أقل صرامة)
+        return (r["idx"] != OTHER_IDX) and (r["conf"] >= T_CONF) and (r["margin"] >= T_MARGIN)
+
+    pass_items = [r for r in per_img if is_pass_any(r)]
+    strong_items = [r for r in per_img if is_strong_any(r)]
+
+    # Rule A: 2/3 agreement among PASS
     if len(pass_items) >= 2:
         counts = Counter([r["label"] for r in pass_items])
         label, count = counts.most_common(1)[0]
@@ -180,23 +196,41 @@ async def predict(files: List[UploadFile] = File(...)):
                 "policy": "majority_pass"
             }
 
-    # Rule 2: Strong rescue if one image is STRONG and others fail (no conflicts)
-    strong_items = [r for r in per_img if is_strong(r)]
+    # Rule B: Strong single wins if others are weak
     if len(strong_items) >= 1:
         best_strong = max(strong_items, key=lambda x: x["conf"])
 
-        # If there is any conflicting PASS label, refuse
-        conflict = any((r["label"] != best_strong["label"]) for r in pass_items)
-        if not conflict:
+        others = [r for r in per_img if r is not best_strong]
+
+        # إذا الباقي ضعيفين أو Unknown/Other → نقبل القوية
+        if all(is_weak(r) for r in others):
             return {
                 "label": best_strong["label"],
                 "confidence": float(best_strong["conf"]),
                 "margin": float(best_strong["margin"]),
                 "top3": top3,
-                "policy": "strong_rescue"
+                "policy": "strong_single_wins"
             }
 
-    # Rule 3/4/5: Unknown
+    # Rule C: Conflict detection (two strong different labels) => Unknown
+    if len(strong_items) >= 2:
+        strong_labels = set([r["label"] for r in strong_items])
+        if len(strong_labels) >= 2:
+            # تضارب حقيقي (غالباً صور لنباتات مختلفة)
+            p1_idx = int(avg_probs.argmax())
+            p1 = float(avg_probs[p1_idx])
+            top2_idx = avg_probs.argsort()[-2:][::-1]
+            p2 = float(avg_probs[int(top2_idx[1])]) if len(top2_idx) > 1 else 0.0
+            margin = p1 - p2
+            return {
+                "label": "Unknown",
+                "confidence": p1,
+                "margin": float(margin),
+                "top3": top3,
+                "policy": "conflict_two_strong"
+            }
+
+    # Rule D: fallback unknown
     p1_idx = int(avg_probs.argmax())
     p1 = float(avg_probs[p1_idx])
     top2_idx = avg_probs.argsort()[-2:][::-1]
