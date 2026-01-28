@@ -173,7 +173,7 @@ async def predict(files: List[UploadFile] = File(...)):
 
     def is_strong_any(r):
         # صورة قوية جدا (تقدر تعدل الأرقام)
-        return (r["idx"] != OTHER_IDX) and (r["conf"] >= 0.80) and (r["margin"] >= 0.10)
+        return (r["idx"] != OTHER_IDX) and (r["conf"] >= 0.75) and (r["margin"] >= 0.10)
 
     def is_pass_any(r):
         # Pass عادي (أقل صرامة)
