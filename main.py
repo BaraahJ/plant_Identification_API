@@ -11,17 +11,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import onnxruntime as ort
 
-
-# ----------------------------
-# Paths
-# ----------------------------
 CONFIG_PATH = "models/model_config.json"
 MODEL_PATH = "models/plant_model_batched.onnx"
 
 
-# ----------------------------
+
 # Load config
-# ----------------------------
 with open(CONFIG_PATH, "r", encoding="utf-8") as f:
     cfg = json.load(f)
 
@@ -36,18 +31,16 @@ OTHER_NAME: str = cfg.get("other_class", "other")
 OTHER_IDX: int = CLASSES.index(OTHER_NAME)
 
 
-# ----------------------------
+
 # ONNX session
-# ----------------------------
 sess = ort.InferenceSession(MODEL_PATH, providers=["CPUExecutionProvider"])
 INPUT_NAME = sess.get_inputs()[0].name
 OUTPUT_NAME = sess.get_outputs()[0].name
 print("✅ ONNX input:", INPUT_NAME, "| output:", OUTPUT_NAME)
 
 
-# ----------------------------
+
 # FastAPI app
-# ----------------------------
 app = FastAPI(title="Plant Identifier API")
 
 app.add_middleware(
@@ -59,9 +52,8 @@ app.add_middleware(
 )
 
 
-# ----------------------------
+
 # Helpers
-# ----------------------------
 def preprocess_image(file_bytes: bytes) -> np.ndarray:
     """Return normalized float32 NCHW tensor (1,3,H,W)."""
     try:
@@ -159,30 +151,23 @@ async def predict(files: List[UploadFile] = File(...)):
     avg_probs = np.mean(np.stack([r["probs"] for r in per_img], axis=0), axis=0)
     top3 = build_top3(avg_probs)
 
-    # ----------------------------
-    # Decision policy (perfect scenarios)
-    # ----------------------------
-
-    # ----------------------------
+# ----------------------------
 # Decision policy (anti-unfair)
 # ----------------------------
 
     def is_weak(r):
-        # صور ضعيفة: يا اما Other/Unknown-like أو ثقتها قليلة
         return (r["idx"] == OTHER_IDX) or (r["conf"] < 0.35)
 
     def is_strong_any(r):
-        # صورة قوية جدا (تقدر تعدل الأرقام)
         return (r["idx"] != OTHER_IDX) and (r["conf"] >= 0.75) and (r["margin"] >= 0.10)
 
     def is_pass_any(r):
-        # Pass عادي (أقل صرامة)
         return (r["idx"] != OTHER_IDX) and (r["conf"] >= T_CONF) and (r["margin"] >= T_MARGIN)
 
     pass_items = [r for r in per_img if is_pass_any(r)]
     strong_items = [r for r in per_img if is_strong_any(r)]
 
-    # Rule A: 2/3 agreement among PASS
+    # Rule A: 2/3 
     if len(pass_items) >= 2:
         counts = Counter([r["label"] for r in pass_items])
         label, count = counts.most_common(1)[0]
@@ -201,8 +186,6 @@ async def predict(files: List[UploadFile] = File(...)):
         best_strong = max(strong_items, key=lambda x: x["conf"])
 
         others = [r for r in per_img if r is not best_strong]
-
-        # إذا الباقي ضعيفين أو Unknown/Other → نقبل القوية
         if all(is_weak(r) for r in others):
             return {
                 "label": best_strong["label"],
@@ -216,7 +199,6 @@ async def predict(files: List[UploadFile] = File(...)):
     if len(strong_items) >= 2:
         strong_labels = set([r["label"] for r in strong_items])
         if len(strong_labels) >= 2:
-            # تضارب حقيقي (غالباً صور لنباتات مختلفة)
             p1_idx = int(avg_probs.argmax())
             p1 = float(avg_probs[p1_idx])
             top2_idx = avg_probs.argsort()[-2:][::-1]
